@@ -1,7 +1,7 @@
 # Django Image to Excel Generator
 
 ## Description
-This is a image to excel Generator made using Django and Bootstrap. It can easily generate excel file for images with proper structure and clarity. It can also recognise handwriting to some extent but not 100% accurate. The primary purpose of this project is to help people save time manually typing data from images to excelsheet. It uses Gemini 1.5 flash model to extract the data in proper format and uses python libraries to generate a downloadable excel file.
+This is a image to excel Generator made using Django and Bootstrap. It can easily generate excel file for images with proper structure and clarity. It can also recognise handwriting to some extent but not 100% accurate. The primary purpose of this project is to help people save time manually typing data from images to excelsheet. It uses Gemini 1.5 flash model to extract the data in proper format and uses python libraries to generate a downloadable excel file. It also provides the extracted CSV data in case the excel file is not generated properly. You can modify the prompt as you see fit to handle the types of image data.
 
 ## Installation
 1. Clone the repository:
