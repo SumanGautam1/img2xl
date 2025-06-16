@@ -16,39 +16,31 @@
 
         #imageUploadArea {
             border: 2px dashed #007bff;
-            padding: 10px; /* Reduced padding */
+            padding: 10px;
             text-align: center;
             margin-bottom: 15px;
             cursor: pointer;
-            min-height: 150px; /* Adjust as needed */
+            min-height: 150px;
             display: flex;
             flex-direction: column;
             justify-content: center;
             align-items: center;
-            position: relative; /* For placeholder absolute positioning */
-            overflow: hidden; /* To contain the image */
+            position: relative;
+            overflow: hidden;
         }
         #imageUploadArea:hover { background-color: #eef4ff; }
-        #imageUploadArea.has-image #placeholderText {
-            display: none; /* Hide placeholder when image is present */
-        }
-        #placeholderText {
-            color: #007bff;
-            pointer-events: none; /* Make text non-interactive for clicks */
-        }
+        #imageUploadArea.has-image #placeholderText { display: none; }
+        #placeholderText { color: #007bff; pointer-events: none; }
         #imagePreview {
             max-width: 100%;
-            max-height: 200px; /* Or control height of #imageUploadArea */
-            object-fit: contain; /* Scale image nicely */
-            display: none; /* Hidden until an image is loaded */
+            max-height: 200px;
+            object-fit: contain;
+            display: none;
         }
-        #imageFileName {
-            font-style: italic;
-            color: #6c757d;
-            margin-top: 5px;
-            text-align: center;
-        }
+        #imageFileName { font-style: italic; color: #6c757d; margin-top: 5px; text-align: center; }
+
         #csvOutputContainer { margin-top: 20px; }
+        .csv-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
         #csvOutput {
             background-color: #e9ecef;
             padding: 15px;
@@ -57,7 +49,10 @@
             overflow-y: auto;
             white-space: pre;
             font-family: monospace;
+            position: relative; /* For copy button positioning if placed inside */
         }
+        /* Style for copy button if you want it absolutely positioned inside #csvOutput */
+        /* #copyCsvBtn { position: absolute; top: 5px; right: 5px; z-index: 10; } */
     </style>
 </head>
 <body>
@@ -79,7 +74,6 @@
             {% endif %}
         </div>
 
-        <!-- This area will display the image and act as a click target for browse -->
         <div id="imageUploadArea" title="Click or paste image here">
             <img id="imagePreview" src="#" alt="Image Preview"/>
             <div id="placeholderText">
@@ -88,26 +82,27 @@
             </div>
         </div>
         <div id="imageFileName">No image selected.</div>
-
-        <!-- Hidden file input for browsing -->
         <input type="file" id="actualFileInput" name="image_file_input_name" accept="image/*" style="display: none;">
 
         <form id="uploadForm" enctype="multipart/form-data">
             {% csrf_token %}
-            <!-- No visible form elements needed here if we handle file via JS -->
             <button type="submit" id="extractButton" class="btn btn-primary w-100 mt-3">
                 <i class="fa-solid fa-wand-magic-sparkles"></i> Extract Table Data
             </button>
         </form>
 
         <div id="csvOutputContainer" style="display: none;">
-            <h4>Extracted CSV Data:</h4>
+            <div class="csv-header">
+                 <h4>Extracted CSV Data:</h4>
+                 <button id="copyCsvBtn" class="btn btn-sm btn-outline-secondary" title="Copy CSV to clipboard">
+                    <i class="fa-regular fa-copy"></i> Copy
+                </button>
+            </div>
             <div id="csvOutput"></div>
             <button id="downloadExcelBtn" class="btn btn-success mt-3 w-100">
                 <i class="fa-solid fa-file-excel"></i> Download as Excel
             </button>
         </div>
-        <p>Made By Suman Gautam</p>
     </div>
 
     <script>
@@ -123,13 +118,15 @@
         const csvOutputContainer = document.getElementById('csvOutputContainer');
         const csvOutputDiv = document.getElementById('csvOutput');
         const downloadExcelBtn = document.getElementById('downloadExcelBtn');
+        const copyCsvBtn = document.getElementById('copyCsvBtn'); // Get the copy button
         const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
 
-        let currentFile = null; // This will hold the File object from paste OR browse
+        let currentFile = null;
         let extractedCsvText = "";
-        let originalFileNameBase = "pasted_image"; // Default for pasted images
+        let originalFileNameBase = "pasted_image";
 
         function handleFileSelect(file) {
+            // ... (same as before)
             if (!file) { // Clearing the selection
                 currentFile = null;
                 imagePreview.src = "#";
@@ -156,57 +153,50 @@
             reader.onload = function(e) {
                 imagePreview.src = e.target.result;
                 imagePreview.style.display = 'block';
-                imageUploadArea.classList.add('has-image'); // Hides placeholder via CSS
+                imageUploadArea.classList.add('has-image');
             }
             reader.readAsDataURL(file);
 
-            csvOutputContainer.style.display = 'none'; // Hide previous results
-            messagesDiv.innerHTML = ''; // Clear previous messages
+            csvOutputContainer.style.display = 'none';
+            messagesDiv.innerHTML = '';
         }
 
-        // Clicking the area triggers the hidden file input
         imageUploadArea.addEventListener('click', (event) => {
-            // Prevent re-triggering if clicking on the image itself sometimes
             if (event.target === imageUploadArea || event.target === placeholderText || event.target.parentNode === placeholderText) {
                  actualFileInput.click();
             }
         });
 
-        // Handle file selection via the hidden file input (Browse)
         actualFileInput.addEventListener('change', function(event) {
             if (this.files && this.files.length > 0) {
                 handleFileSelect(this.files[0]);
             } else {
-                handleFileSelect(null); // No file selected or selection cancelled
+                handleFileSelect(null);
             }
-            this.value = null; // Reset input value to allow selecting the same file again
+            this.value = null;
         });
 
-        // Handle PASTING image anywhere on the document
         document.addEventListener('paste', function(event) {
             const items = (event.clipboardData || event.originalEvent.clipboardData).items;
             let pastedFile = null;
             for (let i = 0; i < items.length; i++) {
                 if (items[i].type.indexOf('image') !== -1) {
                     pastedFile = items[i].getAsFile();
-                    break; 
+                    break;
                 }
             }
-
             if (pastedFile) {
-                event.preventDefault(); // Prevent default paste action (e.g. into a text field)
+                event.preventDefault();
                 handleFileSelect(pastedFile);
             }
         });
 
-        // Handle form submission (AJAX for text extraction)
         uploadForm.addEventListener('submit', async function(event) {
             event.preventDefault();
             if (!currentFile) {
                 displayMessage('Please select or paste an image file.', 'danger');
                 return;
             }
-
             const formData = new FormData();
             formData.append('image_file', currentFile, currentFile.name || `${originalFileNameBase}.${currentFile.type.split('/')[1] || 'png'}`);
             formData.append('csrfmiddlewaretoken', csrfToken);
@@ -221,12 +211,10 @@
                     body: formData
                 });
                 const data = await response.json();
-
                 if (response.ok && data.success) {
                     extractedCsvText = data.csv_text;
-                    // originalFileNameBase is already set by handleFileSelect
                     if (extractedCsvText) {
-                        csvOutputDiv.textContent = extractedCsvText;
+                        csvOutputDiv.textContent = extractedCsvText; // Display text
                         csvOutputContainer.style.display = 'block';
                         displayMessage(data.message || 'CSV data extracted successfully.', 'success');
                     } else {
@@ -243,8 +231,70 @@
             }
         });
 
-        // Handle Excel download (AJAX)
+        // Event listener for the new Copy CSV button
+        copyCsvBtn.addEventListener('click', function() {
+            if (!extractedCsvText) {
+                displayMessage('No CSV data to copy.', 'warning');
+                return;
+            }
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(extractedCsvText)
+                    .then(() => {
+                        displayMessage('CSV data copied to clipboard!', 'success');
+                        // Optionally change button text temporarily
+                        const originalBtnText = copyCsvBtn.innerHTML;
+                        copyCsvBtn.innerHTML = '<i class="fa-solid fa-check"></i> Copied!';
+                        setTimeout(() => {
+                            copyCsvBtn.innerHTML = originalBtnText;
+                        }, 2000);
+                    })
+                    .catch(err => {
+                        console.error('Failed to copy CSV: ', err);
+                        displayMessage('Failed to copy CSV data. Your browser might not support this feature or permission was denied.', 'danger');
+                        // Fallback for older browsers (less reliable)
+                        tryToCopyManually(extractedCsvText);
+                    });
+            } else {
+                // Fallback for very old browsers or insecure contexts (HTTP)
+                displayMessage('Clipboard API not available. Trying fallback...', 'warning');
+                tryToCopyManually(extractedCsvText);
+            }
+        });
+
+        function tryToCopyManually(textToCopy) {
+            const textArea = document.createElement("textarea");
+            textArea.value = textToCopy;
+            // Make the textarea out of sight
+            textArea.style.position = "fixed";
+            textArea.style.top = "0";
+            textArea.style.left = "0";
+            textArea.style.width = "2em";
+            textArea.style.height = "2em";
+            textArea.style.padding = "0";
+            textArea.style.border = "none";
+            textArea.style.outline = "none";
+            textArea.style.boxShadow = "none";
+            textArea.style.background = "transparent";
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+            try {
+                const successful = document.execCommand('copy');
+                if (successful) {
+                    displayMessage('CSV data copied (fallback method)!', 'success');
+                } else {
+                    displayMessage('Failed to copy CSV using fallback. Please copy manually.', 'danger');
+                }
+            } catch (err) {
+                displayMessage('Failed to copy CSV using fallback. Please copy manually.', 'danger');
+                console.error('Fallback copy error:', err);
+            }
+            document.body.removeChild(textArea);
+        }
+
+
         downloadExcelBtn.addEventListener('click', async function() {
+            // ... (same as before)
             if (!extractedCsvText) {
                 displayMessage('No CSV data available to download.', 'warning');
                 return;
@@ -286,7 +336,7 @@
                         displayMessage('Unexpected response from server during Excel generation.', 'danger');
                     }
                 } else {
-                    const errorData = await response.json(); // Attempt to parse error
+                    const errorData = await response.json();
                     displayMessage(errorData.error || `Failed to generate Excel file (HTTP ${response.status}).`, 'danger');
                 }
             } catch (error) {
@@ -321,7 +371,9 @@
             // ... (same as before)
             const originalButtonHtml = {
                 'extractButton': '<i class="fa-solid fa-wand-magic-sparkles"></i> Extract Table Data',
-                'downloadExcelBtn': '<i class="fa-solid fa-file-excel"></i> Download as Excel'
+                'downloadExcelBtn': '<i class="fa-solid fa-file-excel"></i> Download as Excel',
+                // Add for copy button if you change its text dynamically beyond icon
+                // 'copyCsvBtn': '<i class="fa-regular fa-copy"></i> Copy'
             };
 
             if (isLoading) {
@@ -337,7 +389,7 @@
         }
 
         document.addEventListener("DOMContentLoaded", function () {
-            // ... (same as before for initial messages)
+            // ... (same as before)
             const initialAlerts = document.querySelectorAll("#messages .alert");
             initialAlerts.forEach(alertElement => {
                 setTimeout(() => {
