@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+{% load static %}
+<html lang="en" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Extract Tables from Files</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" rel="stylesheet">
+    <style>
+        /* --- Dark Mode Customizations --- */
+        :root {
+            --bs-body-bg: #212529;
+            --bs-body-color: #dee2e6;
+            --custom-container-bg: #2c3034;
+        }
+
+        body {
+            font-family: 'Roboto', sans-serif;
+            background-color: var(--bs-body-bg); /* Use variable */
+            padding-top: 20px;
+            padding-bottom: 20px;
+        }
+
+        .container {
+            max-width: 700px;
+            background-color: var(--custom-container-bg); /* Use variable */
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+            border: 1px solid #495057;
+        }
+
+        h2 { margin-bottom: 25px; color: #fff; } /* Adjusted from h3 */
+        .alert { margin-top: 20px; }
+        .spinner-border-sm { width: 1rem; height: 1rem; }
+
+        #fileUploadArea {
+            border: 2px dashed #0d6efd;
+            padding: 10px;
+            text-align: center;
+            margin-bottom: 15px;
+            cursor: pointer;
+            min-height: 150px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+            overflow: hidden;
+            transition: background-color 0.2s ease-in-out;
+            background-color: rgba(13, 110, 253, 0.05);
+        }
+
+        #fileUploadArea:hover { background-color: rgba(13, 110, 253, 0.1); }
+        #fileUploadArea.has-files #placeholderText { display: none; }
+        #placeholderText { color: #0d6efd; pointer-events: none; }
+        
+        #fileListPreview { width: 100%; }
+        #fileListPreview .list-unstyled { max-height: 200px; overflow-y: auto; }
+        #fileListPreview li {
+            background-color: var(--bs-body-bg);
+            border-radius: 5px;
+            padding: 5px 10px;
+            margin-bottom: 5px;
+            font-size: 0.9rem;
+            text-align: left;
+            border: 1px solid #495057;
+        }
+
+        #csvOutputContainer { margin-top: 20px; }
+        .csv-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
+        #csvOutput {
+            background-color: #212529;
+            border: 1px solid #495057;
+            padding: 15px;
+            border-radius: 5px;
+            max-height: 300px;
+            overflow-y: auto;
+            white-space: pre;
+            font-family: monospace;
+            color: #adb5bd;
+        }
+        
+        /* Footer text style */
+        p {
+            color: #6c757d; /* Muted text color */
+            text-align: center;
+            margin-top: 2rem;
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2 class="text-center">Image and PDF to Excel Converter</h2>
+
+        <div id="messages"></div>
+
+        <div id="fileUploadArea" title="Click to browse, or paste an image">
+            <div id="fileListPreview"></div>
+            <div id="placeholderText">
+                <i class="fa-regular fa-file-lines fa-2x mb-2"></i><br>
+                <span>Paste an image, or click to browse Images/PDFs</span>
+            </div>
+        </div>
+
+        <input type="file" id="actualFileInput" name="image_files" accept="image/*,application/pdf" style="display: none;" multiple>
+
+        <form id="uploadForm" enctype="multipart/form-data">
+            {% csrf_token %}
+            <div class="d-grid gap-2 mt-2">
+                <button type="submit" id="extractButton" class="btn btn-success">
+                    <i class="fa-solid fa-wand-magic-sparkles"></i> Extract Table Data
+                </button>
+                <button type="button" id="clearButton" class="btn btn-danger" style="display: none;">
+                    <i class="fa-solid fa-xmark"></i> Clear Selection
+                </button>
+            </div>
+        </form>
+
+        <div id="csvOutputContainer" style="display: none;">
+            <div class="csv-header">
+                 <h4>Extracted CSV Data:</h4>
+                 <button id="copyCsvBtn" class="btn btn-sm btn-outline-secondary" title="Copy CSV to clipboard">
+                    <i class="fa-regular fa-copy"></i> Copy
+                </button>
+            </div>
+            <div id="csvOutput"></div>
+            <button id="downloadExcelBtn" class="btn btn-success mt-3 w-100">
+                <i class="fa-solid fa-file-excel"></i> Download as Excel
+            </button>
+        </div>
+        <p class="text-light">@Suman Gautam, all rights reserved.</p>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // --- Your existing JavaScript remains completely unchanged ---
+        const fileUploadArea = document.getElementById('fileUploadArea');
+        const fileListPreview = document.getElementById('fileListPreview');
+        const placeholderText = document.getElementById('placeholderText');
+        const actualFileInput = document.getElementById('actualFileInput');
+        const uploadForm = document.getElementById('uploadForm');
+        const extractButton = document.getElementById('extractButton');
+        const messagesDiv = document.getElementById('messages');
+        const csvOutputContainer = document.getElementById('csvOutputContainer');
+        const csvOutputDiv = document.getElementById('csvOutput');
+        const downloadExcelBtn = document.getElementById('downloadExcelBtn');
+        const copyCsvBtn = document.getElementById('copyCsvBtn');
+        const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+        const clearButton = document.getElementById('clearButton');
+
+        let currentFiles = [];
+        let extractedCsvText = "";
+        let originalFileNameBase = "extracted_data";
+
+        function handleFiles(files) {
+            if (!files || files.length === 0) {
+                currentFiles = [];
+                extractedCsvText = "";
+                actualFileInput.value = null;
+                updateFilePreview();
+                csvOutputContainer.style.display = 'none';
+                messagesDiv.innerHTML = '';
+                clearButton.style.display = 'none';
+                return;
+            }
+            const validFiles = Array.from(files).filter(file => file.type.startsWith('image/') || file.type === 'application/pdf');
+            if (validFiles.length !== files.length) {
+                displayMessage('Some files have invalid types and were ignored. Please select only images or PDFs.', 'warning');
+            }
+            if (validFiles.length === 0) {
+                displayMessage('No valid files selected. Please select images or PDFs.', 'danger');
+                handleFiles(null);
+                return;
+            }
+            currentFiles = validFiles;
+            originalFileNameBase = (currentFiles[0].name || 'extracted_data').split('.').slice(0, -1).join('.') || 'extracted_data';
+            updateFilePreview();
+            csvOutputContainer.style.display = 'none';
+            messagesDiv.innerHTML = '';
+            clearButton.style.display = 'block';
+        }
+
+        function updateFilePreview() {
+            fileListPreview.innerHTML = '';
+            if (currentFiles.length > 0) {
+                const list = document.createElement('ul');
+                list.className = 'list-unstyled text-start p-3 mb-0';
+                currentFiles.forEach(file => {
+                    const listItem = document.createElement('li');
+                    const iconClass = file.type === 'application/pdf' ? 'fa-solid fa-file-pdf' : 'fa-solid fa-file-image';
+                    listItem.innerHTML = `<i class="${iconClass} me-2 text-secondary"></i>${file.name}`;
+                    list.appendChild(listItem);
+                });
+                fileListPreview.appendChild(list);
+                fileUploadArea.classList.add('has-files');
+            } else {
+                fileUploadArea.classList.remove('has-files');
+                originalFileNameBase = "extracted_data";
+            }
+        }
+        
+        fileUploadArea.addEventListener('click', () => {
+             actualFileInput.click();
+        });
+        actualFileInput.addEventListener('change', function(event) {
+            handleFiles(this.files && this.files.length > 0 ? this.files : null);
+        });
+        clearButton.addEventListener('click', function() {
+            handleFiles(null);
+        });
+        document.addEventListener('paste', function(event) {
+            const items = (event.clipboardData || window.clipboardData).items;
+            let pastedFile = null;
+            for (let i = 0; i < items.length; i++) {
+                if (items[i].type.indexOf('image') !== -1) {
+                    pastedFile = items[i].getAsFile();
+                    break;
+                }
+            }
+            if (pastedFile) {
+                event.preventDefault();
+                const dataTransfer = new DataTransfer();
+                dataTransfer.items.add(pastedFile);
+                handleFiles(dataTransfer.files);
+            }
+        });
+
+        uploadForm.addEventListener('submit', async function(event) {
+            event.preventDefault();
+            if (currentFiles.length === 0) {
+                displayMessage('Please select one or more image or PDF files.', 'danger');
+                return;
+            }
+            const formData = new FormData();
+            formData.append('csrfmiddlewaretoken', csrfToken);
+            currentFiles.forEach(file => {
+                formData.append('image_files', file);
+            });
+            setLoading(true, extractButton, "Extracting...");
+            messagesDiv.innerHTML = '';
+            csvOutputContainer.style.display = 'none';
+            try {
+                const response = await fetch("{% url 'extract_table_page' %}", {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await response.json();
+                if (response.ok && data.success) {
+                    extractedCsvText = data.csv_text;
+                    if (extractedCsvText) {
+                        csvOutputDiv.textContent = extractedCsvText;
+                        csvOutputContainer.style.display = 'block';
+                        displayMessage(data.message || 'Data extracted successfully.', 'success');
+                    } else {
+                        displayMessage(data.message || 'No table found in the file(s).', 'info');
+                    }
+                } else {
+                    displayMessage(data.error || `An unknown error occurred (HTTP ${response.status}).`, 'danger');
+                }
+            } catch (error) {
+                console.error('Extraction Error:', error);
+                displayMessage('A network or client-side error occurred: ' + error.message, 'danger');
+            } finally {
+                setLoading(false, extractButton, '<i class="fa-solid fa-wand-magic-sparkles"></i> Extract Table Data');
+            }
+        });
+
+        copyCsvBtn.addEventListener('click', function() {
+            if (!extractedCsvText) return;
+            navigator.clipboard.writeText(extractedCsvText).then(() => {
+                displayMessage('CSV data copied to clipboard!', 'success');
+                const originalBtnText = copyCsvBtn.innerHTML;
+                copyCsvBtn.innerHTML = '<i class="fa-solid fa-check"></i> Copied!';
+                setTimeout(() => { copyCsvBtn.innerHTML = originalBtnText; }, 2000);
+            }).catch(err => console.error('Failed to copy CSV: ', err));
+        });
+
+        downloadExcelBtn.addEventListener('click', async function() {
+            if (!extractedCsvText) return;
+            const formData = new FormData();
+            formData.append('action', 'download_excel');
+            formData.append('csv_data', extractedCsvText);
+            formData.append('filename_base', originalFileNameBase);
+            formData.append('csrfmiddlewaretoken', csrfToken);
+            setLoading(true, downloadExcelBtn, "Generating Excel...");
+            try {
+                const response = await fetch("{% url 'extract_table_page' %}", {
+                    method: 'POST',
+                    body: formData
+                });
+                if (response.ok && response.headers.get("content-type")?.includes("spreadsheetml.sheet")) {
+                    const blob = await response.blob();
+                    const contentDisposition = response.headers.get('content-disposition');
+                    let filenameFromServer = originalFileNameBase + ".xlsx";
+                    if (contentDisposition) {
+                        const filenameMatch = contentDisposition.match(/filename="?([^"]+)"?/);
+                        if (filenameMatch?.[1]) filenameFromServer = filenameMatch[1];
+                    }
+                    const link = document.createElement('a');
+                    link.href = URL.createObjectURL(blob);
+                    link.download = filenameFromServer;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                    URL.revokeObjectURL(link.href);
+                } else {
+                    const errorData = await response.json();
+                    displayMessage(errorData.error || `Failed to generate Excel file (HTTP ${response.status}).`, 'danger');
+                }
+            } catch (error) {
+                console.error('Download Error:', error);
+                displayMessage('Error during Excel download: ' + error.message, 'danger');
+            } finally {
+                setLoading(false, downloadExcelBtn, '<i class="fa-solid fa-file-excel"></i> Download as Excel');
+            }
+        });
+
+        function displayMessage(message, type = 'info') {
+            const alertClass = `alert-${type}`;
+            const icon = type === 'danger' ? 'fa-circle-xmark' : (type === 'success' ? 'fa-circle-check' : 'fa-circle-info');
+            const messageHtml = `
+                <div class="alert ${alertClass} alert-dismissible fade show" role="alert">
+                    <i class="fa-solid ${icon} me-2"></i>${message}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>`;
+            messagesDiv.innerHTML = messageHtml;
+        }
+
+        function setLoading(isLoading, button, dynamicText) {
+            const originalButtonHtml = {
+                'extractButton': '<i class="fa-solid fa-wand-magic-sparkles"></i> Extract Table Data',
+                'downloadExcelBtn': '<i class="fa-solid fa-file-excel"></i> Download as Excel',
+            };
+            if (isLoading) {
+                button.disabled = true;
+                button.innerHTML = `<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> ${dynamicText}`;
+            } else {
+                button.disabled = false;
+                button.innerHTML = originalButtonHtml[button.id] || dynamicText;
+            }
+        }
+    </script>
+</body>
+</html>
