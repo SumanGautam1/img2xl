@@ -36,39 +36,44 @@ def extract_table_page(request):
                 # --- 1. Craft the Prompt for Gemini ---
                 # This prompt now needs to be robust for both images and multi-page PDFs
                 prompt_text = """
-Your primary goal is to identify and extract all structured tabular data from the provided file (image or PDF) and represent it as a single, consolidated CSV string.
+            You are a high-precision, automated data extraction engine. Your only function is to convert the primary table or list from a file into a pure, machine-parsable CSV string.
 
-**Core Task: Table Extraction**
+**Your Extraction Strategy:**
 
-1.  **Identify the Main Table:** Locate the primary table in the document. This table will typically have the most columns and define the main structure of the data.
-2.  **Extract Base Data:** Extract all rows and columns from this main table. Infer sensible headers based on the content (e.g., "S.N.", "Description", "Specification", "Quantity", "Basic Rate").
+You must process the data using the following hierarchical strategy. Attempt Step 1 first. Only if it fails, proceed to Step 2.
 
-**Special Rule for Split Tables (Multi-Page PDFs):**
-This is the most important rule. A single table may be split across pages.
-*   After extracting the main table from a page (e.g., Page 1), **immediately inspect the next page (e.g., Page 2)**.
-*   Look for columns of data that are vertically aligned.
-*   **Crucially, check if the number of rows in the column on the new page matches the number of rows you just extracted from the main table.**
-*   If they match, assume it is a continuation of the table. Use the heading above this column (e.g., "Total") as its new header and **append this data as a new column to the rows of the main table.**
-*   Ignore any final summary/total rows at the very bottom of a continuation column that don't align with a specific data row (like a grand total for the whole column).
+**Step 1: The "Header-First" Method (Primary Strategy for PDFs & Formal Tables)**
 
-**Formatting and Output Rules:**
+1.  **Find a Header Row:** Scan the entire text for a single line that clearly functions as a table header. Headers typically contain words like "S.N.", "Item", "Description", "Quantity", "Rate", "Amount", "Price", etc.
+2.  **Apply Strict Structure:** If a clear header row is identified:
+    *   Use that line as your CSV header.
+    *   Assume all subsequent lines that follow a consistent pattern are rows of that table. The number of columns is now strictly defined by this header.
+    *   Extract every column found. Do not merge or simplify data.
+    *   **Crucially, identify and discard any repeated header rows** that may appear in the middle of the data, which is a common issue from multi-page PDF extractions.
 
-3.  **Create a Single Header:** Your final output MUST begin with a single header row. This header should include columns from the main table AND any columns you appended from subsequent pages.
-4.  **Format as CSV:**
-    *   Combine all data into a single CSV block under the one header.
-    *   Values should be separated by a single comma. Enclose values in double quotes if they contain a comma.
-    *   Ensure all rows have the same number of commas (i.e., the same number of columns as the header).
-5.  **No Table Case:** If the file contains no discernible list or tabular data, respond with the exact text: "NO_TABLE_FOUND".
-6.  **Output Purity:** Your response must ONLY be the CSV data or the "NO_TABLE_FOUND" string. Do not include any explanations, markdown, or other text.
+**Step 2: The "Flexible List" Method (Fallback for Handwriting & Simple Lists)**
 
-**Example Scenario:**
-*   **Page 1 has a table:** "S.N.", "Item", "Quantity", "Price" with 20 rows.
-*   **Page 2 has a single column:** Headed "Total", with 20 corresponding values.
-*   **Your action:** Extract the Page 1 table. See that the Page 2 column has 20 rows. Merge them.
-*   **Expected CSV Output:**
-    S.N.,Item,Quantity,Price,Total
-    1,"Apples",10,2.00,20.00
-"""
+*   **Condition:** Use this method **only if** you cannot identify a clear header row in Step 1.
+*   **Action:** Look for a simple itemized list (e.g., lines starting with numbers like `1.`, `(2)`, or bullets).
+*   **Structure:**
+    *   Create a simple 2 or 3-column CSV with headers like "No.", "Description", and optionally "Details".
+    *   Merge any inconsistent data (like quantities that only appear on some lines) into the "Description" column to maintain a valid CSV structure.
+
+**Universal Formatting Rules (Apply to ALL Outputs):**
+
+*   **IMPERATIVE Quoting Rule:** If any cell value contains a comma, the entire value **MUST** be enclosed in double quotes (`"`). This is the most critical rule for preventing parser failure.
+    *   **Correct Example:** `1,"Item, with comma",100`
+    *   **Incorrect Example:** `1,Item, with comma,100`
+*   **Row Consistency:** Every row in the final CSV must have the exact same number of commas. Represent empty cells as an empty field (e.g., `value1,,value3`).
+*   **Special Text:** Append ` [CROSSED_OUT]` to any text that is clearly struck-through.
+*   **Ignore Noise:** Discard all unrelated text: page numbers, company logos, addresses, paragraphs, signatures, and marginalia.
+
+**Final Output Requirements (Strictly Enforced):**
+
+1.  **If Data Found:** Your response **must ONLY be the pure CSV string**.
+2.  **If No Data Found:** Your response **must ONLY be the exact string: `NO_TABLE_FOUND`**.
+3.  **DO NOT** include any explanations, summaries, or markdown formatting (like ` ```csv `).
+            """
                 model_name = "gemini-1.5-flash"
                 model = genai.GenerativeModel(model_name)
 
