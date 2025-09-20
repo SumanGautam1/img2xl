@@ -25,9 +25,9 @@ SECRET_KEY = config('DJANGO_SECRET_KEY')
 GOOGLE_GEMINI_API_KEY = config('GOOGLE_GEMINI_API_KEY')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = False
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['*']
 
 
 # Application definition
